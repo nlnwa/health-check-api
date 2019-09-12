@@ -1,4 +1,4 @@
-FROM golang:alpine as golang
+FROM docker.io/golang:latest as golang
 
 WORKDIR /build
 
@@ -7,11 +7,11 @@ COPY . .
 RUN mkdir -p /out
 
 # Cache builds without version info
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/health-check-api -ldflags "-s -w"
+RUN go build -mod readonly -o /out/health-check-api -ldflags "-s -w"
 
 ARG VERSION
-ENV GO_LDFLAGS="-s -w -X github.com/nlnwa/nettarkivet-health-check-api/pkg/version.Version=${VERSION}"
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/health-check-api -ldflags "${GO_LDFLAGS}"
+ENV GO_LDFLAGS="-s -w -X github.com/nlnwa/health-check-api/pkg/version.Version=${VERSION}"
+RUN go build -mod readonly -o /out/health-check-api -ldflags "${GO_LDFLAGS}"
 
 
 FROM gcr.io/distroless/base

@@ -2,74 +2,15 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"log"
 	"net/http"
-	"time"
+
+	"github.com/spf13/viper"
+
+	"github.com/nlnwa/health-check-api/pkg/check"
+	"github.com/nlnwa/health-check-api/pkg/health"
 )
-
-// https://tools.ietf.org/html/draft-inadarei-api-health-check-03#section-3
-
-type Status int
-
-const (
-	StatusFail Status = iota
-	StatusWarn
-	StatusPass
-)
-
-//var statusMapStandard = map[Status]string{
-//	StatusFail: "unhealthy",
-//	StatusWarn: "warn",
-//	StatusPass: "healthy",
-//}
-
-var statusMapSpringBoot = map[Status]string{
-	StatusFail: "down",
-	StatusPass: "up",
-	StatusWarn: "warn",
-}
-
-var statusMap = statusMapSpringBoot
-
-func Pass() string {
-	return statusMap[StatusPass]
-}
-
-func Fail() string {
-	return statusMap[StatusFail]
-}
-
-func Warn() string {
-	return statusMap[StatusWarn]
-}
-
-type Health struct {
-	Status      string           `json:"status"` // single mandatory root field
-	Version     string           `json:"version,omitempty"`
-	ReleaseId   string           `json:"releaseId,omitempty"`
-	Notes       string           `json:"notes,omitempty"`
-	Output      string           `json:"output,omitempty"`
-	Checks      map[string]Check `json:"checks,omitempty"`
-	Links       []string         `json:"links,omitempty"`
-	ServiceId   string           `json:"serviceId,omitempty"`
-	Description string           `json:"description,omitempty"`
-}
-
-type Check struct {
-	ComponentId       string   `json:"componentId,omitempty"`
-	ComponentType     string   `json:"componentType,omitempty"`
-	ObservedValue     string   `json:"observedValue,omitempty"`
-	ObservedUnit      string   `json:"observedUnit,omitempty"`
-	Status            string   `json:"status,omitempty"`
-	AffectedEndpoints []string `json:"affectedEndpoints,omitempty"`
-	Time              string   `json:"time,omitempty"`
-	Output            string   `json:"output,omitempty"`
-	Links             []string `json:"links,omitempty"`
-}
-
-func getCurrentTime() string {
-	return time.Now().Format(time.RFC3339)
-}
 
 func setDefaultHeaders(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
@@ -78,49 +19,95 @@ func setDefaultHeaders(w http.ResponseWriter) {
 	w.Header().Set("Vary", "Accept-Encoding")
 }
 
-func checkDashboard() (check Check) {
-	resp, err := http.Head("https://nettarkivet.nb.no/veidemann")
+func healthCheckHandler(healthChecks []health.Checker) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		setDefaultHeaders(w)
 
-	check.ComponentType = "component"
-	check.Time = getCurrentTime()
+		checks := make(map[string][]health.CheckResponse)
 
-	if err != nil {
-		check.Status = Fail()
-		check.Output = err.Error()
-	} else if resp.StatusCode < 400 {
-		check.Status = Pass()
-	} else {
-		check.Status = Warn()
-		check.Output = resp.Status
+		for _, healthCheck := range healthChecks {
+			checks[healthCheck.Name()] = healthCheck.Check()
+		}
+
+		response := health.Response{
+			Status: health.StatusHealthy,
+			Checks: checks,
+		}
+
+		for _, c := range response.Checks {
+			for _, checkResponse := range c {
+				if checkResponse.Status < response.Status {
+					response.Status = checkResponse.Status
+				}
+			}
+		}
+
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}
+}
 
+func livenessHandler() http.HandlerFunc {
+	response, err := json.Marshal(health.Response{Status: health.StatusHealthy})
+	if err != nil {
+		log.Fatal(err)
+	}
+	return func(w http.ResponseWriter, _ *http.Request) {
+		setDefaultHeaders(w)
+		if _, err := w.Write(response); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}
+}
+
+type webConfig struct {
+	Name string
+	Url  string
+}
+
+type config struct {
+	Web []webConfig
+}
+
+func loadConfig(path string) (c config) {
+	viper.SetConfigFile(path)
+	err := viper.ReadInConfig()
+	if err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			log.Fatal(err)
+		}
+	}
+	err = viper.Unmarshal(&c)
+	if err != nil {
+		log.Fatal(err)
+	}
 	return
 }
 
-func StatusHandler(w http.ResponseWriter, _ *http.Request) {
-	setDefaultHeaders(w)
-
-	checks := map[string]Check{
-		"veidemann-dashboard": checkDashboard(),
-	}
-
-	health := Health{
-		Status: statusMap[StatusPass],
-		Checks: checks,
-	}
-
-	for _, check := range checks {
-		if check.Status < health.Status {
-			health.Status = check.Status
-		}
-	}
-
-	if err := json.NewEncoder(w).Encode(health); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
 func main() {
-	http.HandleFunc("/", StatusHandler)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	// default values
+	port := "8080"
+	healthPath := "/health"
+	livenessPath := "/healthz"
+	configPath := "./config.yaml"
+
+	flag.StringVar(&port, "port", port, "port to listen on")
+	flag.StringVar(&healthPath, "check-path", healthPath, "URL path of health endpoint")
+	flag.StringVar(&livenessPath, "liveness-path", livenessPath, "URL path of liveness endpoint")
+	flag.StringVar(&configPath, "config", configPath, "config file")
+	flag.Parse()
+
+	config := loadConfig(configPath)
+
+	var checkers []health.Checker
+
+	for _, value := range config.Web {
+		checkers = append(checkers, check.NewWebChecker(value.Name, value.Url))
+	}
+
+	http.Handle(livenessPath, livenessHandler())
+	http.Handle(healthPath, healthCheckHandler(checkers))
+
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

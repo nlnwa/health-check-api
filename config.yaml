@@ -1,0 +1,3 @@
+#  web:
+#    - name: dashboard
+#      url: http://localhost/dashboard
