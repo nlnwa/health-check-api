@@ -10,13 +10,19 @@ const (
 	statusHealthy
 )
 
-var statusMapStandard = map[status]string{
-	statusUnhealthy: "fail",
+//var statusMapStandard = map[status]string{
+//	statusUnhealthy: "fail",
+//	statusWarn:      "warn",
+//	statusHealthy:   "pass",
+//}
+
+var statusMapSpringBoot = map[status]string{
+	statusUnhealthy: "down",
 	statusWarn:      "warn",
-	statusHealthy:   "pass",
+	statusHealthy:   "up",
 }
 
-var statusMap = statusMapStandard
+var statusMap = statusMapSpringBoot
 
 var StatusHealthy = statusMap[statusHealthy]
 
