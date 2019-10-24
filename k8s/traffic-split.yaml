@@ -1,0 +1,12 @@
+apiVersion: split.smi-spec.io/v1alpha1
+kind: TrafficSplit
+metadata:
+  name: veidemann-health-check-api-traffic-split
+spec:
+  service: veidemann-health-check-api
+  # Services inside the namespace with their own selectors, endpoints and configuration.
+  backends:
+    - service: veidemann-health-check-api
+      weight: 100
+    - service: my-website-v2
+      weight: 50

@@ -1,0 +1,23 @@
+kind: Kustomization
+apiVersion: kustomize.config.k8s.io/v1beta1
+
+commonLabels:
+  app.kubernetes.io/name: veidemann-health-check-api
+
+# configurations:
+#  - traffic-split-configuration.yaml
+
+resources:
+  - deployment.yaml
+  - service.yaml
+#  - traffic-split.yaml
+
+configMapGenerator:
+  - name: veidemann-health-check-api-env
+    literals:
+      - PROMETHEUS_URL=http://prometheus-k8s.monitoring:9090/
+      - CONTROLLER_ADDRESS=local-veidemann-controller:7700
+      - RETHINKDB_HOST=local-rethinkdb-proxy
+      - VEIDEMANN_DASHBOARD_URL=http://local-veidemann-dashboard/veidemann
+      - CONTROLLER_API_KEY=ABCD-1234
+      - VERSION_OVERRIDE=skaffold

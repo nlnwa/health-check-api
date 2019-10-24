@@ -1,6 +1,13 @@
-# Health Checker
+# Veidemann Health Checker
 
 ## Health check API for Veidemann
+
+
+The health checker exposes two endpoints both of which responds with [Health Check Response Format for HTTP APIs](https://tools.ietf.org/id/draft-inadarei-api-health-check-03.html):
+
+1. **Health endpoint**
+
+2. **Liveness endpoint (liveness of health checker)**
 
 ## Build
 
@@ -10,35 +17,50 @@ go build
 
 ## Run
 
+To see what options are available run:
+
 ```bash
-./health-check-api
+./veidemann-health-check-api --help
 ```
-
-The health checker exposes two endpoints both of which responds with [Health Check Response Format for HTTP APIs](https://tools.ietf.org/id/draft-inadarei-api-health-check-03.html)
-
-- **Health endpoint**
-
-    http://localhost:8080/health
-
-- **Liveness endpoint (health of health checker)**
-    
-    Used by for example kubernetes liveness probe.
-    
-    http://localhost:8080/healthz
-
 
 ## Configuration
 
-Web endpoints to be checked are configurable and must be specified in a configuration file (defaults to `./config.yaml`).
+Options can be configured via:
 
-**config.yaml:**
+1. Configuration file
 
-```yaml
-web:
-  - name: dashboard
-    url: http://host/path
-  - name: rest-api
-  - url: http://host/api-path
+    Supported formats are JSON, TOML, YAML, HCL, envfile (.env) and Java properties (.conf).
+    
+    Example:
+    
+    ```angular2
+    # config.yaml
+ 
+    controller-address: "myhost:7700"
+    ```
+
+2. Environment variables
+
+    Environment variables take precedence over values in configuration file.
+    
+    ```bash
+    CONTROLLER_ADDRESS=myhost:7700 ./veidemann-health-check-api
+    ```
+
+3. Flags
+
+    Flags take precedence over environment variables.
+    
+    ```bash
+    ./veidemann-health-check-api --controller-api-key ABCD-1234
+    ```
+
+
+## Skaffold
+
+The `k8s` folder contains kubernetes manifests used by the _skaffold_
+configuration `skaffold.yaml`.
+
+```bash
+skaffold dev --port-forward
 ```
-
-Web endpoints are checked by a HTTP HEAD request and considered healthy if response is HTTP status code between 2xx-3xx.

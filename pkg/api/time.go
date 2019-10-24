@@ -1,4 +1,4 @@
-package health
+package api
 
 import "time"
 
