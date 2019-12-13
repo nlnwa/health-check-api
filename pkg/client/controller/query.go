@@ -2,9 +2,10 @@ package controller
 
 import (
 	"context"
+	"io"
 
 	"github.com/nlnwa/veidemann-api-go/frontier/v1"
-	api "github.com/nlnwa/veidemann-api-go/veidemann_api"
+	"github.com/nlnwa/veidemann-api-go/report/v1"
 	"github.com/pkg/errors"
 )
 
@@ -12,8 +13,7 @@ type Query interface {
 	GetRunningJobs(ctx context.Context) ([]string, error)
 }
 
-// RunLanguageDetection calls the gRPC method with the same name.
-func (ac Client) listJobExecutions(ctx context.Context) (*api.JobExecutionsListReply, error) {
+func (ac Client) listRunningJobExecutionStatuses(ctx context.Context) ([]*frontier.JobExecutionStatus, error) {
 	conn, err := ac.dial(ctx)
 	if err != nil {
 		return nil, err
@@ -22,28 +22,41 @@ func (ac Client) listJobExecutions(ctx context.Context) (*api.JobExecutionsListR
 		_ = conn.Close()
 	}()
 
-	client := api.NewStatusClient(conn)
+	client := report.NewReportClient(conn)
 
-	req := &api.ListJobExecutionsRequest{}
+	req := &report.JobExecutionsListRequest{
+		State: []frontier.JobExecutionStatus_State{
+			frontier.JobExecutionStatus_RUNNING,
+		},
+	}
 
-	reply, err := client.ListJobExecutions(ctx, req)
+	stream, err := client.ListJobExecutions(ctx, req)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to list job executions")
 	}
-	return reply, nil
+	var jeses []*frontier.JobExecutionStatus
+	for {
+		jobExecutionStatus, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		jeses = append(jeses, jobExecutionStatus)
+	}
+	return jeses, nil
 }
 
 func (ac Client) GetRunningJobs(ctx context.Context) ([]string, error) {
 	var ids []string
 
-	reply, err := ac.listJobExecutions(ctx)
+	jeses, err := ac.listRunningJobExecutionStatuses(ctx)
 	if err != nil {
 		return ids, err
 	}
-	for _, value := range reply.GetValue() {
-		if value.GetState() == frontier.JobExecutionStatus_RUNNING {
-			ids = append(ids, value.Id)
-		}
+	for _, jes := range jeses {
+		ids = append(ids, jes.GetId())
 	}
 	return ids, nil
 }
