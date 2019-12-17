@@ -9,6 +9,7 @@ import (
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/web"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/version"
 	flag "github.com/spf13/pflag"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -80,8 +81,11 @@ func healthCheckHandler(hc *healthcheck.HealthChecker) http.HandlerFunc {
 
 		hc.RunChecks(healthCollector(health))
 
-		if err := json.NewEncoder(w).Encode(health); err != nil {
+		writer := io.MultiWriter(w, log.Writer())
+
+		if err := json.NewEncoder(writer).Encode(health); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println(err)
 		}
 	}
 }
