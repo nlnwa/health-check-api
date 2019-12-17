@@ -3,11 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/client/controller"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/client/prometheus"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/client/rethinkdb"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/client/web"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/version"
 	flag "github.com/spf13/pflag"
 	"io"
 	"log"
@@ -19,7 +14,12 @@ import (
 	"time"
 
 	"github.com/nlnwa/veidemann-health-check-api/pkg/api"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/client/controller"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/client/prometheus"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/client/rethinkdb"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/client/web"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/healthcheck"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/version"
 	"github.com/spf13/viper"
 )
 
