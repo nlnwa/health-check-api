@@ -3,12 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/client/controller"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/client/prometheus"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/client/rethinkdb"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/client/web"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/version"
 	flag "github.com/spf13/pflag"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -18,7 +14,12 @@ import (
 	"time"
 
 	"github.com/nlnwa/veidemann-health-check-api/pkg/api"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/client/controller"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/client/prometheus"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/client/rethinkdb"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/client/web"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/healthcheck"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/version"
 	"github.com/spf13/viper"
 )
 
@@ -80,8 +81,11 @@ func healthCheckHandler(hc *healthcheck.HealthChecker) http.HandlerFunc {
 
 		hc.RunChecks(healthCollector(health))
 
-		if err := json.NewEncoder(w).Encode(health); err != nil {
+		writer := io.MultiWriter(w, log.Writer())
+
+		if err := json.NewEncoder(writer).Encode(health); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println(err)
 		}
 	}
 }
