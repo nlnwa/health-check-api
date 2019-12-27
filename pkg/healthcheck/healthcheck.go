@@ -169,7 +169,7 @@ func (hc *HealthChecker) getChecks() []component {
 						Time:        time.Now(),
 					}
 
-					jobs, err := hc.controllerClient.GetRunningJobs(ctx)
+					veidemannJobs, err := hc.controllerClient.GetRunningJobs(ctx)
 					if err != nil {
 						result.Err = err
 						result.Status = func(err error) Status {
@@ -180,9 +180,8 @@ func (hc *HealthChecker) getChecks() []component {
 							}
 						}(err)
 					} else {
-						if len(jobs) > 0 {
-							result.Value = jobs
-							veidemannJobs = jobs
+						if len(veidemannJobs) > 0 {
+							result.Value = veidemannJobs
 						}
 					}
 					return result
@@ -198,7 +197,7 @@ func (hc *HealthChecker) getChecks() []component {
 						Type:        "harvester",
 						Time:        time.Now(),
 					}
-					isActivity, err := hc.prometheusClient.IsActivity(ctx)
+					veidemannIsActive, err := hc.prometheusClient.IsActivity(ctx)
 					if err != nil {
 						result.Err = err
 						result.Status = func(err error) Status {
@@ -209,8 +208,7 @@ func (hc *HealthChecker) getChecks() []component {
 							}
 						}(err)
 					} else {
-						result.Value = isActivity
-						veidemannIsActive = isActivity
+						result.Value = veidemannIsActive
 					}
 
 					return result
