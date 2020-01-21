@@ -111,11 +111,11 @@ type Config struct {
 	VeidemannDashboardUrl string `mapstructure:"veidemann-dashboard-url"`
 	ControllerAddress     string `mapstructure:"controller-address"`
 	ControllerApiKey      string `mapstructure:"controller-api-key"`
-	RethinkDbName         string `mapstructure:"rethinkdb-name"`
-	RethinkDbHost         string `mapstructure:"rethinkdb-host"`
-	RethinkDbPort         int    `mapstructure:"rethinkdb-port"`
-	RethinkDbUser         string `mapstructure:"rethinkdb-user"`
-	RethinkDbPassword     string `mapstructure:"rethinkdb-password"`
+	RethinkDbName         string `mapstructure:"db-name"`
+	RethinkDbHost         string `mapstructure:"db-host"`
+	RethinkDbPort         int    `mapstructure:"db-port"`
+	RethinkDbUser         string `mapstructure:"db-user"`
+	RethinkDbPassword     string `mapstructure:"db-password"`
 	PrometheusUrl         string `mapstructure:"prometheus-url"`
 }
 
@@ -145,11 +145,11 @@ func main() {
 	flag.StringVar(&prometheusUrl, "prometheus-url", prometheusUrl, "Prometheus HTTP API URL")
 	flag.StringVar(&configFileName, "config-file", configFileName, "Name of config file (without extension)")
 	flag.StringVar(&configPath, "config-path", configPath, "Path to look for config file in")
-	flag.StringVar(&rethinkdbHost, "rethinkdb-host", rethinkdbHost, "RethinkDb hostname")
-	flag.IntVar(&rethinkdbPort, "rethinkdb-port", rethinkdbPort, "RethinkDb port")
-	flag.StringVar(&rethinkdbName, "rethinkdb-name", rethinkdbName, "RethinkDb database name")
-	flag.StringVar(&rethinkdbUser, "rethinkdb-user", rethinkdbUser, "RethinkDb user")
-	flag.StringVar(&rethinkdbPassword, "rethinkdb-password", rethinkdbPassword, "RethinkDb password")
+	flag.StringVar(&rethinkdbHost, "db-host", rethinkdbHost, "RethinkDb hostname")
+	flag.IntVar(&rethinkdbPort, "db-port", rethinkdbPort, "RethinkDb port")
+	flag.StringVar(&rethinkdbName, "db-name", rethinkdbName, "RethinkDb database name")
+	flag.StringVar(&rethinkdbUser, "db-user", rethinkdbUser, "RethinkDb user")
+	flag.StringVar(&rethinkdbPassword, "db-password", rethinkdbPassword, "RethinkDb password")
 	flag.Parse()
 
 	err := viper.BindPFlags(flag.CommandLine)
