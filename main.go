@@ -109,7 +109,8 @@ type Config struct {
 	HealthPath            string `mapstructure:"health-path"`
 	LivenessPath          string `mapstructure:"liveness-path"`
 	VeidemannDashboardUrl string `mapstructure:"veidemann-dashboard-url"`
-	ControllerAddress     string `mapstructure:"controller-address"`
+	ControllerHost        string `mapstructure:"controller-host"`
+	ControllerPort        int    `mapstructure:"controller-port"`
 	ControllerApiKey      string `mapstructure:"controller-api-key"`
 	RethinkDbName         string `mapstructure:"db-name"`
 	RethinkDbHost         string `mapstructure:"db-host"`
@@ -126,7 +127,8 @@ func main() {
 	livenessPath := "/healthz"
 	configFileName := "config"
 	configPath := "."
-	controllerAddress := "localhost:7700"
+	controllerHost := "veidemann-controller"
+	controllerPort := 7700
 	controllerApiKey := ""
 	rethinkdbUser := "admin"
 	rethinkdbPassword := "rethinkdb"
@@ -140,7 +142,8 @@ func main() {
 	flag.StringVar(&healthPath, "health-path", healthPath, "URL path of health endpoint")
 	flag.StringVar(&livenessPath, "liveness-path", livenessPath, "URL path of liveness endpoint")
 	flag.StringVar(&veidemannDashboardUrl, "veidemann-dashboard-url", veidemannDashboardUrl, "URL of veidemann dashboard")
-	flag.StringVar(&controllerAddress, "controller-address", controllerAddress, "Veidemann controller address")
+	flag.StringVar(&controllerHost, "controller-host", controllerHost, "Veidemann controller host")
+	flag.IntVar(&controllerPort, "controller-port", controllerPort, "Veidemann controller port")
 	flag.StringVar(&controllerApiKey, "controller-api-key", controllerApiKey, "Veidemann controller API key")
 	flag.StringVar(&prometheusUrl, "prometheus-url", prometheusUrl, "Prometheus HTTP API URL")
 	flag.StringVar(&configFileName, "config-file", configFileName, "Name of config file (without extension)")
@@ -175,7 +178,7 @@ func main() {
 
 	healthCheckerOptions := healthcheck.Options{
 		Controller: controller.Options{
-			Address: config.ControllerAddress,
+			Address: config.ControllerHost + ":" + string(config.ControllerPort),
 			ApiKey:  config.ControllerApiKey,
 		},
 		WebOptions: web.Options{
