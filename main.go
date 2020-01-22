@@ -178,7 +178,8 @@ func main() {
 
 	healthCheckerOptions := healthcheck.Options{
 		Controller: controller.Options{
-			Address: config.ControllerHost + ":" + string(config.ControllerPort),
+			Host: config.ControllerHost,
+			Port: config.ControllerPort,
 			ApiKey:  config.ControllerApiKey,
 		},
 		WebOptions: web.Options{

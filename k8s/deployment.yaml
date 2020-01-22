@@ -8,7 +8,6 @@ spec:
       containers:
         - name: veidemann-health-check-api
           image: veidemann-health-check-api
-          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8080
@@ -19,3 +18,6 @@ spec:
           envFrom:
             - configMapRef:
                 name: veidemann-health-check-api-env
+            - secretRef:
+                name: veidemann-rethinkdb-env
+                optional: false

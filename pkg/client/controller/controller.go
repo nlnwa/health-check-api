@@ -17,14 +17,17 @@ package controller
 
 import (
 	"context"
-	"github.com/pkg/errors"
+	"fmt"
+	"strconv"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
 
 type Options struct {
-	Address string
-	ApiKey  string
+	Host   string
+	Port   int
+	ApiKey string
 }
 
 // Client represents the client to the aggregator service.
@@ -36,7 +39,7 @@ type Client struct {
 // New creates a new client with the specified address and apiKey.
 func New(options Options) Client {
 	return Client{
-		address: options.Address,
+		address: options.Host + ":" + strconv.FormatInt(int64(options.Port), 10),
 		cred:    apiKeyCredentials{Key: options.ApiKey},
 	}
 }
@@ -45,7 +48,7 @@ func New(options Options) Client {
 func (ac Client) dial(ctx context.Context) (*grpc.ClientConn, error) {
 	conn, err := grpc.DialContext(ctx, ac.address, grpc.WithInsecure(), grpc.WithPerRPCCredentials(ac.cred))
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to dial: %s", ac.address)
+		return nil, fmt.Errorf("failed to dial %s: %w", ac.address, err)
 	}
 	return conn, nil
 }
