@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/nlnwa/veidemann-api-go/frontier/v1"
 	"github.com/nlnwa/veidemann-api-go/report/v1"
@@ -31,11 +30,9 @@ func (ac Client) listRunningJobExecutionStatuses(ctx context.Context) ([]*fronti
 		},
 	}
 
-	log.Printf("address: %+v", ac.address)
-
 	stream, err := client.ListJobExecutions(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf( "failed to list job executions: %w", err)
+		return nil, fmt.Errorf("failed to list job executions: %w", err)
 	}
 	var jeses []*frontier.JobExecutionStatus
 	for {
