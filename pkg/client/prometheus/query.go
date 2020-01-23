@@ -25,6 +25,6 @@ func (pc Client) IsActivity(ctx context.Context) (bool, error) {
 		}
 		return vector[0].Value > 0, nil
 	default:
-		return false, fmt.Errorf("expected value to be of type model.ValVector: %#v", value)
+		return false, nil
 	}
 }
