@@ -123,7 +123,9 @@ func (hc *HealthChecker) getChecks() []component {
 						Err:         err,
 						Value:       status,
 						Status: func(err error) Status {
-							if err != nil || statusCode >= 400 {
+							if err != nil {
+								return StatusFail
+							} else if statusCode >= 400 {
 								return StatusWarning
 							} else {
 								return StatusPass
