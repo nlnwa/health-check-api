@@ -2,21 +2,21 @@ package healthcheck
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	controllerApi "github.com/nlnwa/veidemann-api-go/controller/v1"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/controller"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/prometheus"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/client/rethinkdb"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/web"
 )
 
 const (
-	VeidemannDashboard string = "veidemann:dashboard"
-	// VeidemannApi             string = "veidemann:api-ok"
-	VeidemannJobs        string = "veidemann:jobs"
-	VeidemannShouldPause string = "veidemann:shouldPause"
-	VeidemannActivity    string = "veidemann:activity"
-	VeidemannHarvest     string = "veidemann:harvest"
+	VeidemannDashboard     string = "veidemann:dashboard"
+	VeidemannJobs          string = "veidemann:jobs"
+	VeidemannCrawlerStatus string = "veidemann:crawlerStatus"
+	VeidemannActivity      string = "veidemann:activity"
+	VeidemannHarvest       string = "veidemann:harvest"
 )
 
 type Value interface {
@@ -62,14 +62,12 @@ type Options struct {
 	WebOptions web.Options
 	Controller controller.Options
 	Prometheus prometheus.Options
-	RethinkDb  rethinkdb.Options
 }
 
 type HealthChecker struct {
 	httpClient       web.Query
 	prometheusClient prometheus.Query
 	controllerClient controller.Query
-	rethinkDbClient  rethinkdb.Query
 	components       []component
 }
 
@@ -78,7 +76,6 @@ func NewHealthChecker(options *Options) *HealthChecker {
 		httpClient:       web.New(options.WebOptions),
 		controllerClient: controller.New(options.Controller),
 		prometheusClient: prometheus.New(options.Prometheus),
-		rethinkDbClient:  rethinkdb.New(options.RethinkDb),
 	}
 	hc.components = hc.getChecks()
 	return hc
@@ -87,6 +84,7 @@ func NewHealthChecker(options *Options) *HealthChecker {
 func (hc *HealthChecker) RunChecks(observer checkObserver) {
 	for _, component := range hc.components {
 		var checkResults []*Result
+
 		for _, checker := range component.checkers {
 			checkResults = append(checkResults, hc.runCheck(checker))
 		}
@@ -106,7 +104,7 @@ func (hc *HealthChecker) runCheck(checker checker) *Result {
 
 // getChecks returns a list of components to be checked
 func (hc *HealthChecker) getChecks() []component {
-	var veidemannIsPaused bool
+	var veidemannRunStatus *controllerApi.RunStatus
 	var veidemannIsActive bool
 	var veidemannJobs []string
 
@@ -137,16 +135,17 @@ func (hc *HealthChecker) getChecks() []component {
 			},
 		},
 		{
-			id: VeidemannShouldPause,
+			id: VeidemannCrawlerStatus,
 			checkers: []checker{
 				func(ctx context.Context) *Result {
-					isPaused, err := hc.rethinkDbClient.CheckIsPaused()
+					var err error
+					veidemannRunStatus, err = hc.controllerClient.GetRunStatus(ctx)
 					result := &Result{
-						Description: "check if harvester is paused",
+						Description: "check crawler status",
 						Type:        "harvester",
 						Time:        time.Now(),
 						Err:         err,
-						Value:       isPaused,
+						Value:       fmt.Sprintf("%v", veidemannRunStatus),
 						Status: func(err error) Status {
 							if err != nil {
 								return StatusWarning
@@ -155,7 +154,6 @@ func (hc *HealthChecker) getChecks() []component {
 							}
 						}(err),
 					}
-					veidemannIsPaused = isPaused
 
 					return result
 				},
@@ -170,8 +168,8 @@ func (hc *HealthChecker) getChecks() []component {
 						Type:        "harvester",
 						Time:        time.Now(),
 					}
-
-					veidemannJobs, err := hc.controllerClient.GetRunningJobs(ctx)
+					var err error
+					veidemannJobs, err = hc.controllerClient.GetRunningJobs(ctx)
 					if err != nil {
 						result.Err = err
 						result.Status = func(err error) Status {
@@ -199,7 +197,8 @@ func (hc *HealthChecker) getChecks() []component {
 						Type:        "harvester",
 						Time:        time.Now(),
 					}
-					veidemannIsActive, err := hc.prometheusClient.IsActivity(ctx)
+					var err error
+					veidemannIsActive, err = hc.prometheusClient.IsActivity(ctx)
 					if err != nil {
 						result.Err = err
 						result.Status = func(err error) Status {
@@ -226,12 +225,16 @@ func (hc *HealthChecker) getChecks() []component {
 						Type:        "harvester",
 						Time:        time.Now(),
 						Status: func() Status {
-							if veidemannIsPaused {
+							if veidemannRunStatus == nil {
+								return StatusFail
+							} else if *veidemannRunStatus == controllerApi.RunStatus_PAUSED {
 								if veidemannIsActive {
 									return StatusWarning
 								} else {
 									return StatusPass
 								}
+							} else if *veidemannRunStatus == controllerApi.RunStatus_PAUSE_REQUESTED {
+								return StatusPass
 							} else if len(veidemannJobs) > 0 && !veidemannIsActive {
 								return StatusFail
 							}
