@@ -13,7 +13,7 @@ type Query interface {
 }
 
 func (pc Client) IsActivity(ctx context.Context) (bool, error) {
-	value, err := pc.Query(ctx, "sum(rate(veidemann_page_requests_total[5m]))", time.Now())
+	value, _, err := pc.Query(ctx, "sum(rate(veidemann_page_requests_total[5m]))", time.Now())
 	if err != nil {
 		return false, err
 	}
