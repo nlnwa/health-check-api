@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/nlnwa/veidemann-api-go/controller/v1"
 	"github.com/nlnwa/veidemann-api-go/frontier/v1"
 	"github.com/nlnwa/veidemann-api-go/report/v1"
 )
 
 type Query interface {
 	GetRunningJobs(ctx context.Context) ([]string, error)
+	GetRunStatus(ctx context.Context) (*controller.RunStatus, error)
 }
 
 func (ac Client) listRunningJobExecutionStatuses(ctx context.Context) ([]*frontier.JobExecutionStatus, error) {
@@ -59,4 +62,23 @@ func (ac Client) GetRunningJobs(ctx context.Context) ([]string, error) {
 		ids = append(ids, jes.GetId())
 	}
 	return ids, nil
+}
+
+func (ac Client) GetRunStatus(ctx context.Context) (*controller.RunStatus, error) {
+	conn, err := ac.dial(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = conn.Close()
+	}()
+
+	client := controller.NewControllerClient(conn)
+
+	status, err := client.Status(ctx, &empty.Empty{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to check status: %w", err)
+	} else {
+		return &status.RunStatus, nil
+	}
 }
