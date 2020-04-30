@@ -18,6 +18,3 @@ spec:
           envFrom:
             - configMapRef:
                 name: veidemann-health-check-api-env
-            - secretRef:
-                name: veidemann-rethinkdb-env
-                optional: false

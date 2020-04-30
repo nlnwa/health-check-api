@@ -16,7 +16,6 @@ import (
 	"github.com/nlnwa/veidemann-health-check-api/pkg/api"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/controller"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/prometheus"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/client/rethinkdb"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/web"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/healthcheck"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/version"
@@ -112,11 +111,6 @@ type Config struct {
 	ControllerHost        string `mapstructure:"controller-host"`
 	ControllerPort        int    `mapstructure:"controller-port"`
 	ControllerApiKey      string `mapstructure:"controller-api-key"`
-	RethinkDbName         string `mapstructure:"db-name"`
-	RethinkDbHost         string `mapstructure:"db-host"`
-	RethinkDbPort         int    `mapstructure:"db-port"`
-	RethinkDbUser         string `mapstructure:"db-user"`
-	RethinkDbPassword     string `mapstructure:"db-password"`
 	PrometheusUrl         string `mapstructure:"prometheus-url"`
 }
 
@@ -130,11 +124,6 @@ func main() {
 	controllerHost := "veidemann-controller"
 	controllerPort := 7700
 	controllerApiKey := ""
-	rethinkdbUser := "admin"
-	rethinkdbPassword := "rethinkdb"
-	rethinkdbName := "veidemann"
-	rethinkdbHost := "localhost"
-	rethinkdbPort := 28015
 	prometheusUrl := "http://localhost:9090"
 	veidemannDashboardUrl := "http://localhost/veidemann"
 
@@ -148,11 +137,6 @@ func main() {
 	flag.StringVar(&prometheusUrl, "prometheus-url", prometheusUrl, "Prometheus HTTP API URL")
 	flag.StringVar(&configFileName, "config-file", configFileName, "Name of config file (without extension)")
 	flag.StringVar(&configPath, "config-path", configPath, "Path to look for config file in")
-	flag.StringVar(&rethinkdbHost, "db-host", rethinkdbHost, "RethinkDb hostname")
-	flag.IntVar(&rethinkdbPort, "db-port", rethinkdbPort, "RethinkDb port")
-	flag.StringVar(&rethinkdbName, "db-name", rethinkdbName, "RethinkDb database name")
-	flag.StringVar(&rethinkdbUser, "db-user", rethinkdbUser, "RethinkDb user")
-	flag.StringVar(&rethinkdbPassword, "db-password", rethinkdbPassword, "RethinkDb password")
 	flag.Parse()
 
 	err := viper.BindPFlags(flag.CommandLine)
@@ -178,22 +162,15 @@ func main() {
 
 	healthCheckerOptions := healthcheck.Options{
 		Controller: controller.Options{
-			Host: config.ControllerHost,
-			Port: config.ControllerPort,
-			ApiKey:  config.ControllerApiKey,
+			Host:   config.ControllerHost,
+			Port:   config.ControllerPort,
+			ApiKey: config.ControllerApiKey,
 		},
 		WebOptions: web.Options{
 			VeidemannDashboardUrl: config.VeidemannDashboardUrl,
 		},
 		Prometheus: prometheus.Options{
 			Address: config.PrometheusUrl,
-		},
-		RethinkDb: rethinkdb.Options{
-			Name:     config.RethinkDbName,
-			Host:     config.RethinkDbHost,
-			Port:     config.RethinkDbPort,
-			Username: config.RethinkDbUser,
-			Password: config.RethinkDbPassword,
 		},
 	}
 	healthChecker := healthcheck.NewHealthChecker(&healthCheckerOptions)
