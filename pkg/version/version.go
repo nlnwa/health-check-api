@@ -1,18 +1,35 @@
 package version
 
-import "os"
-
-const (
-	undefinedVersion = "dev-undefined"
+import (
+	"encoding/json"
+	"io/ioutil"
+	"os"
 )
 
-var Version = undefinedVersion
+var Version = "undefined"
 
-func init() {
-	if Version == undefinedVersion {
-		override := os.Getenv("VERSION_OVERRIDE")
-		if override != "" {
-			Version = override
-		}
+func GetNotes(filename string) []string {
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil
 	}
+	defer func() {
+		_ = f.Close()
+	}()
+
+	data, err := ioutil.ReadAll(f)
+	if err != nil {
+		return nil
+	}
+	var v map[string]string
+	if err := json.Unmarshal(data, &v); err != nil {
+		return nil
+	}
+
+	var notes []string
+	for key, value := range v {
+		notes = append(notes, key + ": " + value)
+	}
+
+	return notes
 }

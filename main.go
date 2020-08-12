@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/version"
 	flag "github.com/spf13/pflag"
 	"io"
 	"log"
@@ -18,7 +19,6 @@ import (
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/prometheus"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/web"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/healthcheck"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/version"
 	"github.com/spf13/viper"
 )
 
@@ -30,8 +30,6 @@ func setDefaultHeaders(w http.ResponseWriter) {
 }
 
 func healthCollector(health *api.Health) func(*healthcheck.CheckResult) {
-	health.Status = api.StatusHealthy
-	health.Version = version.Version
 	health.Checks = make(map[string][]api.Check, 0)
 
 	return func(healthCheck *healthcheck.CheckResult) {
@@ -72,11 +70,11 @@ func statusToApi(status healthcheck.Status) api.Status {
 	return statusToApi[status]
 }
 
-func healthCheckHandler(hc *healthcheck.HealthChecker) http.HandlerFunc {
+func healthCheckHandler(hc *healthcheck.HealthChecker, health *api.Health) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		setDefaultHeaders(w)
 
-		health := &api.Health{}
+		health.Status = api.StatusHealthy
 
 		hc.RunChecks(healthCollector(health))
 
@@ -126,6 +124,7 @@ func main() {
 	controllerApiKey := ""
 	prometheusUrl := "http://localhost:9090"
 	veidemannDashboardUrl := "http://localhost/veidemann"
+	versionsPath := "./versions.json"
 
 	flag.StringVar(&port, "port", port, "Listening port")
 	flag.StringVar(&healthPath, "health-path", healthPath, "URL path of health endpoint")
@@ -137,6 +136,7 @@ func main() {
 	flag.StringVar(&prometheusUrl, "prometheus-url", prometheusUrl, "Prometheus HTTP API URL")
 	flag.StringVar(&configFileName, "config-file", configFileName, "Name of config file (without extension)")
 	flag.StringVar(&configPath, "config-path", configPath, "Path to look for config file in")
+	flag.StringVar(&versionsPath, "versions-path", versionsPath, "Path to versions file")
 	flag.Parse()
 
 	err := viper.BindPFlags(flag.CommandLine)
@@ -175,9 +175,14 @@ func main() {
 	}
 	healthChecker := healthcheck.NewHealthChecker(&healthCheckerOptions)
 
+	health := &api.Health{
+		Version: version.Version,
+		Notes:  version.GetNotes(versionsPath),
+	}
+
 	router := http.NewServeMux()
 	router.HandleFunc(config.LivenessPath, livenessHandler())
-	router.HandleFunc(config.HealthPath, healthCheckHandler(healthChecker))
+	router.HandleFunc(config.HealthPath, healthCheckHandler(healthChecker, health))
 
 	srv := &http.Server{
 		Addr:    ":" + config.Port,

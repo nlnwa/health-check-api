@@ -55,7 +55,7 @@ type Health struct {
 	Status      Status   `json:"status"` // mandatory
 	Version     string   `json:"version,omitempty"`
 	ReleaseId   string   `json:"releaseId,omitempty"`
-	Notes       string   `json:"notes,omitempty"`
+	Notes       []string   `json:"notes,omitempty"`
 	Output      string   `json:"output,omitempty"`
 	Checks      Checks   `json:"checks,omitempty"`
 	Links       []string `json:"links,omitempty"`
