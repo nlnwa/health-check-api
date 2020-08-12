@@ -18,3 +18,13 @@ spec:
           envFrom:
             - configMapRef:
                 name: veidemann-health-check-api-env
+          volumeMounts:
+            - mountPath: /versions.json
+              name: veidemann
+      volumes:
+        - name: veidemann
+          configMap:
+            name: veidemann-dbdf27gt2f
+            items:
+              - key: versions.json
+                path: versions.json

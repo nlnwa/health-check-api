@@ -28,8 +28,7 @@ func GetNotes(filename string) []string {
 
 	var notes []string
 	for key, value := range v {
-		notes = append(notes, key + ": " + value)
+		notes = append(notes, key+": "+value)
 	}
-
 	return notes
 }
