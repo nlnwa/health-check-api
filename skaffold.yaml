@@ -1,16 +1,14 @@
-apiVersion: skaffold/v2alpha2
+apiVersion: skaffold/v2beta6
 kind: Config
 metadata:
   name: veidemann-health-check-api
-
 build:
   artifacts:
   - image: veidemann-health-check-api
-
 deploy:
   kustomize:
-    path: k8s
-
+    paths:
+    - k8s
 portForward:
 - resourceType: service
   resourceName: veidemann-health-check-api
