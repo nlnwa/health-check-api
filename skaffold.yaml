@@ -1,16 +1,10 @@
 apiVersion: skaffold/v2beta6
 kind: Config
-metadata:
-  name: veidemann-health-check-api
 build:
   artifacts:
-  - image: veidemann-health-check-api
+    - image: norsknettarkiv/veidemann-health-check-api
+  local: {}
 deploy:
   kustomize:
     paths:
-    - k8s
-portForward:
-- resourceType: service
-  resourceName: veidemann-health-check-api
-  port: 80
-  localPort: 8080
+      - k8s

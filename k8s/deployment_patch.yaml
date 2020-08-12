@@ -7,24 +7,21 @@ spec:
     spec:
       containers:
         - name: veidemann-health-check-api
-          image: veidemann-health-check-api
-          ports:
-            - name: http
-              containerPort: 8080
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: http
-          envFrom:
-            - configMapRef:
-                name: veidemann-health-check-api-env
+          env:
+            - name: VEIDEMANN_DASHBOARD_URL
+              value: http://veidemann-dashboard/veidemann
+            - name: CONTROLLER_API_KEY
+              value: ABCD-1234
+              valueFrom: # unset base
           volumeMounts:
             - mountPath: /versions.json
+              subPath: versions.json
               name: veidemann
+              readOnly: true
       volumes:
         - name: veidemann
           configMap:
-            name: veidemann-dbdf27gt2f
+            name: veidemann-health-check-api-env
             items:
               - key: versions.json
                 path: versions.json
