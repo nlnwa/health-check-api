@@ -3,20 +3,21 @@ package healthcheck
 import (
 	"context"
 	"fmt"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/version"
+	"log"
 	"time"
 
-	controllerApi "github.com/nlnwa/veidemann-api-go/controller/v1"
+	controllerApi "github.com/nlnwa/veidemann-api/go/controller/v1"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/controller"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/prometheus"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/client/web"
 )
 
 const (
-	VeidemannDashboard     string = "veidemann:dashboard"
-	VeidemannJobs          string = "veidemann:jobs"
-	VeidemannCrawlerStatus string = "veidemann:crawlerStatus"
-	VeidemannActivity      string = "veidemann:activity"
-	VeidemannHarvest       string = "veidemann:harvest"
+	VeidemannFetching string = "veidemann:fetching"
+	VeidemannStatus   string = "veidemann:status"
+	VeidemannActivity string = "veidemann:activity"
+	VeidemannHarvest  string = "veidemann:harvest"
+	VeidemannVersion  string = "veidemann:version"
 )
 
 type Value interface {
@@ -37,16 +38,15 @@ type CheckResult struct {
 }
 
 type Result struct {
-	Id          string
-	Type        string
-	Unit        string
-	Endpoints   []string
-	Links       []string
-	Time        time.Time
-	Status      Status
-	Value       Value
-	Err         error
-	Description string
+	Id        string
+	Type      string
+	Value     Value
+	Unit      string
+	Status    Status
+	Endpoints []string
+	Links     []string
+	Time      time.Time
+	Err       error
 }
 
 type checker func(context.Context) *Result
@@ -56,37 +56,44 @@ type component struct {
 	checkers []checker
 }
 
-type checkObserver func(*CheckResult)
+type CheckObserver func(*CheckResult)
 
 type Options struct {
-	WebOptions web.Options
-	Controller controller.Options
-	Prometheus prometheus.Options
+	Controller  controller.Options
+	Prometheus  prometheus.Options
+	VersionPath string
+}
+
+type HealthCheckere interface {
+	RunChecks(CheckObserver)
 }
 
 type HealthChecker struct {
-	httpClient       web.Query
 	prometheusClient prometheus.Query
 	controllerClient controller.Query
+	versionPath      string
 	components       []component
 }
 
-func NewHealthChecker(options *Options) *HealthChecker {
+func New(options *Options) HealthCheckere {
 	hc := &HealthChecker{
-		httpClient:       web.New(options.WebOptions),
 		controllerClient: controller.New(options.Controller),
 		prometheusClient: prometheus.New(options.Prometheus),
+		versionPath:      options.VersionPath,
 	}
 	hc.components = hc.getChecks()
 	return hc
 }
 
-func (hc *HealthChecker) RunChecks(observer checkObserver) {
+func (hc *HealthChecker) RunChecks(observer CheckObserver) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
 	for _, component := range hc.components {
 		var checkResults []*Result
 
 		for _, checker := range component.checkers {
-			checkResults = append(checkResults, hc.runCheck(checker))
+			checkResults = append(checkResults, checker(ctx))
 		}
 		result := &CheckResult{
 			Name:    component.id,
@@ -96,93 +103,83 @@ func (hc *HealthChecker) RunChecks(observer checkObserver) {
 	}
 }
 
-func (hc *HealthChecker) runCheck(checker checker) *Result {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
-	defer cancel()
-	return checker(ctx)
-}
-
 // getChecks returns a list of components to be checked
 func (hc *HealthChecker) getChecks() []component {
-	var veidemannRunStatus *controllerApi.RunStatus
-	var veidemannIsActive bool
-	var veidemannJobs []string
-
+	var runStatus controllerApi.RunStatus
+	var isActive bool
+	var nrOfFetchingSeeds int
+	var queueSize int64
+	var versions *Result
 	return []component{
 		{
-			id: VeidemannDashboard,
+			id: VeidemannVersion,
 			checkers: []checker{
 				func(ctx context.Context) *Result {
-					statusCode, status, err := hc.httpClient.CheckVeidemannDashboard(ctx)
-					result := &Result{
-						Description: "check veidemann dashboard is responding",
-						Type:        "dashboard",
-						Time:        time.Now(),
-						Err:         err,
-						Value:       status,
+					if versions != nil {
+						return versions
+					}
+					value, err := version.GetVersions(hc.versionPath)
+					versions = &Result{
+						Time:  time.Now(),
+						Err:   err,
+						Value: value,
 						Status: func(err error) Status {
 							if err != nil {
-								return StatusFail
-							} else if statusCode >= 400 {
 								return StatusWarning
-							} else {
-								return StatusPass
 							}
+							return StatusPass
 						}(err),
 					}
-					return result
+					return versions
 				},
 			},
 		},
 		{
-			id: VeidemannCrawlerStatus,
+			id: VeidemannStatus,
 			checkers: []checker{
 				func(ctx context.Context) *Result {
-					var err error
-					veidemannRunStatus, err = hc.controllerClient.GetRunStatus(ctx)
-					result := &Result{
-						Description: "check crawler status",
-						Type:        "harvester",
-						Time:        time.Now(),
-						Err:         err,
-						Value:       fmt.Sprintf("%v", veidemannRunStatus),
-						Status: func(err error) Status {
-							if err != nil {
-								return StatusWarning
-							} else {
-								return StatusUndefined
-							}
-						}(err),
-					}
-
-					return result
-				},
-			},
-		},
-		{
-			id: VeidemannJobs,
-			checkers: []checker{
-				func(ctx context.Context) *Result {
-					result := &Result{
-						Description: "check which jobs are running",
-						Type:        "harvester",
-						Time:        time.Now(),
-					}
-					var err error
-					veidemannJobs, err = hc.controllerClient.GetRunningJobs(ctx)
+					crawlerStatus, err := hc.controllerClient.GetCrawlerStatus(ctx)
 					if err != nil {
-						result.Err = err
-						result.Status = func(err error) Status {
+						log.Println(err)
+					}
+					runStatus = crawlerStatus.GetRunStatus()
+					queueSize = crawlerStatus.GetQueueSize()
+					result := &Result{
+						Type:  "harvester",
+						Time:  time.Now(),
+						Err:   err,
+						Value: fmt.Sprintf("%v", crawlerStatus),
+						Status: func(err error) Status {
 							if err != nil {
-								return StatusWarning
-							} else {
 								return StatusUndefined
 							}
-						}(err)
-					} else {
-						if len(veidemannJobs) > 0 {
-							result.Value = veidemannJobs
-						}
+							return StatusPass
+						}(err),
+					}
+					return result
+				},
+			},
+		},
+		{
+			id: VeidemannFetching,
+			checkers: []checker{
+				func(ctx context.Context) *Result {
+					fetchingSeeds, err := hc.controllerClient.ListFetchingSeeds(ctx, 5)
+					if err != nil {
+						log.Println(err)
+					}
+					nrOfFetchingSeeds = len(fetchingSeeds)
+					result := &Result{
+						Type:  "harvester",
+						Time:  time.Now(),
+						Err:   err,
+						Value: fetchingSeeds,
+						Status: func(err error) Status {
+							if err != nil {
+								return StatusUndefined
+							}
+							return StatusPass
+						}(err),
 					}
 					return result
 				},
@@ -192,26 +189,19 @@ func (hc *HealthChecker) getChecks() []component {
 			id: VeidemannActivity,
 			checkers: []checker{
 				func(ctx context.Context) *Result {
+					isActivity, err := hc.prometheusClient.IsActivity(ctx)
 					result := &Result{
-						Description: "check if there is harvesting activity",
-						Type:        "harvester",
-						Time:        time.Now(),
-					}
-					var err error
-					veidemannIsActive, err = hc.prometheusClient.IsActivity(ctx)
-					if err != nil {
-						result.Err = err
-						result.Status = func(err error) Status {
+						Type:  "harvester",
+						Time:  time.Now(),
+						Err:   err,
+						Value: isActivity,
+						Status: func(err error) Status {
 							if err != nil {
-								return StatusWarning
-							} else {
 								return StatusUndefined
 							}
-						}(err)
-					} else {
-						result.Value = veidemannIsActive
+							return StatusPass
+						}(err),
 					}
-
 					return result
 				},
 			},
@@ -221,22 +211,14 @@ func (hc *HealthChecker) getChecks() []component {
 			checkers: []checker{
 				func(ctx context.Context) *Result {
 					return &Result{
-						Description: "check if veidemann harvest is nominal",
-						Type:        "harvester",
-						Time:        time.Now(),
+						Type: "harvester",
+						Time: time.Now(),
 						Status: func() Status {
-							if veidemannRunStatus == nil {
-								return StatusFail
-							} else if *veidemannRunStatus == controllerApi.RunStatus_PAUSED {
-								if veidemannIsActive {
-									return StatusWarning
-								} else {
-									return StatusPass
+							switch runStatus {
+							case controllerApi.RunStatus_RUNNING:
+								if queueSize > 0 && isActive && nrOfFetchingSeeds == 0 {
+									return StatusFail
 								}
-							} else if *veidemannRunStatus == controllerApi.RunStatus_PAUSE_REQUESTED {
-								return StatusPass
-							} else if len(veidemannJobs) > 0 && !veidemannIsActive {
-								return StatusFail
 							}
 							return StatusPass
 						}(),

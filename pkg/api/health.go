@@ -1,6 +1,7 @@
 package api
 
 // https://tools.ietf.org/html/draft-inadarei-api-health-check-03#section-3
+var Version = "v1"
 
 type StatusCode int
 
@@ -48,7 +49,6 @@ type Check struct {
 	Time              string   `json:"time,omitempty"`
 	Output            string   `json:"output,omitempty"`
 	Links             []string `json:"links,omitempty"`
-	Description       string   `json:"description,omitempty"`
 }
 
 type Health struct {

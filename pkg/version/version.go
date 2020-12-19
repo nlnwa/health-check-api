@@ -1,34 +1,22 @@
 package version
 
 import (
-	"encoding/json"
 	"io/ioutil"
 	"os"
 )
 
-var Version = "undefined"
-
-func GetNotes(filename string) []string {
+func GetVersions(filename string) (string, error) {
 	f, err := os.Open(filename)
 	if err != nil {
-		return nil
+		return "", err
 	}
 	defer func() {
 		_ = f.Close()
 	}()
 
-	data, err := ioutil.ReadAll(f)
+	b, err := ioutil.ReadAll(f)
 	if err != nil {
-		return nil
+		return "", err
 	}
-	var v map[string]string
-	if err := json.Unmarshal(data, &v); err != nil {
-		return nil
-	}
-
-	var notes []string
-	for key, value := range v {
-		notes = append(notes, key+": "+value)
-	}
-	return notes
+	return string(b), nil
 }

@@ -3,24 +3,31 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/version"
-	flag "github.com/spf13/pflag"
-	"io"
-	"log"
+	"fmt"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/api"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/client/controller"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/client/prometheus"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/healthcheck"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/logger"
+	"github.com/rs/zerolog/log"
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/nlnwa/veidemann-health-check-api/pkg/api"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/client/controller"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/client/prometheus"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/client/web"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/healthcheck"
-	"github.com/spf13/viper"
 )
+
+var Version = "undefined"
+
+var statusToApi = map[healthcheck.Status]api.Status{
+	healthcheck.StatusPass:      api.StatusHealthy,
+	healthcheck.StatusWarning:   api.StatusWarn,
+	healthcheck.StatusFail:      api.StatusUnhealthy,
+	healthcheck.StatusUndefined: api.StatusWarn,
+}
 
 func setDefaultHeaders(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "public, no-cache, must-revalidate, max-age=3600")
@@ -29,22 +36,22 @@ func setDefaultHeaders(w http.ResponseWriter) {
 	w.Header().Set("Vary", "Accept-Encoding")
 }
 
-func healthCollector(health *api.Health) func(*healthcheck.CheckResult) {
-	health.Checks = make(map[string][]api.Check, 0)
+func healthCollector(health *api.Health) healthcheck.CheckObserver {
+	health.Checks = make(map[string][]api.Check)
+	health.Status = api.StatusHealthy
 
 	return func(healthCheck *healthcheck.CheckResult) {
 		var checks []api.Check
 		for _, checkResult := range healthCheck.Results {
 			check := api.Check{
-				Time:              api.GetCurrentTime(),
+				Time:              checkResult.Time.Format(time.RFC3339),
 				ComponentType:     checkResult.Type,
 				ComponentId:       checkResult.Id,
-				Status:            statusToApi(checkResult.Status),
+				Status:            statusToApi[checkResult.Status],
 				ObservedUnit:      checkResult.Unit,
 				ObservedValue:     checkResult.Value,
 				AffectedEndpoints: checkResult.Endpoints,
 				Links:             checkResult.Links,
-				Description:       checkResult.Description,
 				Output: func(err error) string {
 					if err != nil {
 						return err.Error()
@@ -61,28 +68,20 @@ func healthCollector(health *api.Health) func(*healthcheck.CheckResult) {
 	}
 }
 
-func statusToApi(status healthcheck.Status) api.Status {
-	statusToApi := map[healthcheck.Status]api.Status{
-		healthcheck.StatusPass:    api.StatusHealthy,
-		healthcheck.StatusWarning: api.StatusWarn,
-		healthcheck.StatusFail:    api.StatusUnhealthy,
+func healthCheckHandler(hc healthcheck.HealthCheckere) http.HandlerFunc {
+	health := &api.Health{
+		Version:   api.Version,
+		ReleaseId: Version,
 	}
-	return statusToApi[status]
-}
 
-func healthCheckHandler(hc *healthcheck.HealthChecker, health *api.Health) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		setDefaultHeaders(w)
 
-		health.Status = api.StatusHealthy
-
 		hc.RunChecks(healthCollector(health))
 
-		writer := io.MultiWriter(w, log.Writer())
-
-		if err := json.NewEncoder(writer).Encode(health); err != nil {
+		if err := json.NewEncoder(w).Encode(health); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			log.Println(err)
+			log.Error().Err(err).Msg("Failed to encode Health struct")
 		}
 	}
 }
@@ -91,7 +90,7 @@ func healthCheckHandler(hc *healthcheck.HealthChecker, health *api.Health) http.
 func livenessHandler() http.HandlerFunc {
 	response, err := json.Marshal(api.Health{Status: api.StatusHealthy})
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	return func(w http.ResponseWriter, _ *http.Request) {
 		setDefaultHeaders(w)
@@ -102,109 +101,99 @@ func livenessHandler() http.HandlerFunc {
 }
 
 type Config struct {
-	Port                  string
-	HealthPath            string `mapstructure:"health-path"`
-	LivenessPath          string `mapstructure:"liveness-path"`
-	VeidemannDashboardUrl string `mapstructure:"veidemann-dashboard-url"`
-	ControllerHost        string `mapstructure:"controller-host"`
-	ControllerPort        int    `mapstructure:"controller-port"`
-	ControllerApiKey      string `mapstructure:"controller-api-key"`
-	PrometheusUrl         string `mapstructure:"prometheus-url"`
+	LogLevel         string `mapstructure:"log-level"`
+	LogFormat        string `mapstructure:"log-format"`
+	LogMethod        bool   `mapstructure:"log-method"`
+	Host             string `mapstructure:"host"`
+	Port             int    `mapstructure:"port"`
+	HealthPath       string `mapstructure:"health-path"`
+	LivenessPath     string `mapstructure:"liveness-path"`
+	ControllerHost   string `mapstructure:"controller-host"`
+	ControllerPort   int    `mapstructure:"controller-port"`
+	ControllerApiKey string `mapstructure:"controller-api-key"`
+	PrometheusUrl    string `mapstructure:"prometheus-url"`
+	VersionsPath	 string `mapstructure:"versions-path"`
 }
 
 func main() {
-	// configuration defaults
-	port := "8080"
-	healthPath := "/health"
-	livenessPath := "/healthz"
-	configFileName := "config"
-	configPath := "."
-	controllerHost := "veidemann-controller"
-	controllerPort := 7700
-	controllerApiKey := ""
-	prometheusUrl := "http://localhost:9090"
-	veidemannDashboardUrl := "http://localhost/veidemann"
-	versionsPath := "./versions.json"
+	pflag.String("host", "", "Listening interface")
+	pflag.Int("port", 8080, "Listening port")
+	pflag.String("health-path", "/health", "URL path of health endpoint")
+	pflag.String("liveness-path", "/healthz", "URL path of liveness endpoint")
+	pflag.String("controller-host", "veidemann-controller", "Veidemann controller host")
+	pflag.Int("controller-port", 7700, "Veidemann controller port")
+	pflag.String("controller-api-key", "", "Veidemann controller API key")
+	pflag.String("prometheus-url", "http://localhost:9090", "Prometheus HTTP API URL")
+	pflag.String("config-file", "config", "Name of config file (without extension)")
+	pflag.String("config-path", ".", "Path to look for config file in")
+	pflag.String("versions-path", "./versions.json", "Path to versions file")
+	pflag.String("log-level", "info", "Log level, available levels are: panic, fatal, error, warn, info, debug and trace")
+	pflag.String("log-format", "logfmt", "Log format, available values are: logfmt and json")
+	pflag.Bool("log-method", false, "Log file:line of method caller")
+	pflag.Parse()
 
-	flag.StringVar(&port, "port", port, "Listening port")
-	flag.StringVar(&healthPath, "health-path", healthPath, "URL path of health endpoint")
-	flag.StringVar(&livenessPath, "liveness-path", livenessPath, "URL path of liveness endpoint")
-	flag.StringVar(&veidemannDashboardUrl, "veidemann-dashboard-url", veidemannDashboardUrl, "URL of veidemann dashboard")
-	flag.StringVar(&controllerHost, "controller-host", controllerHost, "Veidemann controller host")
-	flag.IntVar(&controllerPort, "controller-port", controllerPort, "Veidemann controller port")
-	flag.StringVar(&controllerApiKey, "controller-api-key", controllerApiKey, "Veidemann controller API key")
-	flag.StringVar(&prometheusUrl, "prometheus-url", prometheusUrl, "Prometheus HTTP API URL")
-	flag.StringVar(&configFileName, "config-file", configFileName, "Name of config file (without extension)")
-	flag.StringVar(&configPath, "config-path", configPath, "Path to look for config file in")
-	flag.StringVar(&versionsPath, "versions-path", versionsPath, "Path to versions file")
-	flag.Parse()
-
-	err := viper.BindPFlags(flag.CommandLine)
+	err := viper.BindPFlags(pflag.CommandLine)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()
-	viper.SetConfigFile(configFileName)
-	viper.AddConfigPath(configPath)
+	viper.SetConfigFile(viper.GetString("config-file"))
+	viper.AddConfigPath(viper.GetString("config-path"))
 	err = viper.ReadInConfig()
 	if err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			panic(err)
 		}
 	}
-
 	var config Config
 	err = viper.Unmarshal(&config)
 	if err != nil {
 		panic(err)
 	}
 
-	healthCheckerOptions := healthcheck.Options{
+	logger.InitLog(config.LogLevel, config.LogFormat, config.LogMethod)
+
+	healthChecker := healthcheck.New(&healthcheck.Options{
 		Controller: controller.Options{
 			Host:   config.ControllerHost,
 			Port:   config.ControllerPort,
 			ApiKey: config.ControllerApiKey,
 		},
-		WebOptions: web.Options{
-			VeidemannDashboardUrl: config.VeidemannDashboardUrl,
-		},
 		Prometheus: prometheus.Options{
 			Address: config.PrometheusUrl,
 		},
-	}
-	healthChecker := healthcheck.NewHealthChecker(&healthCheckerOptions)
-
-	health := &api.Health{
-		Version: version.Version,
-		Notes:  version.GetNotes(versionsPath),
-	}
+		VersionPath: config.VersionsPath,
+	})
 
 	router := http.NewServeMux()
 	router.HandleFunc(config.LivenessPath, livenessHandler())
-	router.HandleFunc(config.HealthPath, healthCheckHandler(healthChecker, health))
+	router.HandleFunc(config.HealthPath, healthCheckHandler(healthChecker))
 
 	srv := &http.Server{
-		Addr:    ":" + config.Port,
+		Addr:    fmt.Sprintf("%s:%d", config.Host, config.Port),
 		Handler: router,
 	}
 
-	// shutdown gracefully
+	done := make(chan struct{})
 	go func() {
-		done := make(chan os.Signal, 1)
-		signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+		defer close(done)
+		signals := make(chan os.Signal)
+		signal.Notify(signals, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 		// wait for signal
-		<-done
+		sig := <-signals
+		log.Info().Str("signal", sig.String()).Msg("Shutting down")
 
 		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*30))
 		defer cancel()
-		if err := srv.Shutdown(ctx); err != nil {
-			log.Fatal(err)
+		if err := srv.Shutdown(ctx); err != nil && err != http.ErrServerClosed{
+			log.Error().Err(err).Msg("")
 		}
 	}()
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatal(err)
+		log.Error().Err(err).Msg("Server failure")
 	}
+	<-done
 }
