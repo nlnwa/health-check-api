@@ -8,11 +8,13 @@ RUN go mod download
 
 COPY . .
 
+ARG VERSION=dirty
+
 # -trimpath remove file system paths from executable
 # -ldflags arguments passed to go tool link:
 #   -s disable symbol table
 #   -w disable DWARF generation
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X github.com/nlnwa/veidemann-health-check-api/pkg/version.Version=${VERSION}" .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.Version=$VERSION" .
 
 
 FROM gcr.io/distroless/base
