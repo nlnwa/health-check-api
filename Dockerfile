@@ -1,4 +1,4 @@
-FROM docker.io/golang:1.14 as golang
+FROM golang:1.15 as build
 
 WORKDIR /build
 
@@ -8,19 +8,18 @@ RUN go mod download
 
 COPY . .
 
-# Cache build without version info
-RUN go build -trimpath -ldflags "-s -w"
-
-ARG VERSION
-ENV GO_LDFLAGS="-s -w -X github.com/nlnwa/veidemann-health-check-api/pkg/version.Version=${VERSION}"
-RUN go build -trimpath -ldflags "${GO_LDFLAGS}"
+# -trimpath remove file system paths from executable
+# -ldflags arguments passed to go tool link:
+#   -s disable symbol table
+#   -w disable DWARF generation
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X github.com/nlnwa/veidemann-health-check-api/pkg/version.Version=${VERSION}" .
 
 
 FROM gcr.io/distroless/base
 
 COPY LICENSE /LICENSE
 
-COPY --from=golang /build/veidemann-health-check-api /
+COPY --from=build build/veidemann-health-check-api /
 
 ENTRYPOINT ["/veidemann-health-check-api"]
 
