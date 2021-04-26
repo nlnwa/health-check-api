@@ -12,14 +12,6 @@ import (
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/prometheus"
 )
 
-const (
-	VeidemannFetching string = "veidemann:fetching"
-	VeidemannStatus   string = "veidemann:status"
-	VeidemannActivity string = "veidemann:activity"
-	VeidemannHarvest  string = "veidemann:harvest"
-	VeidemannVersion  string = "veidemann:version"
-)
-
 type Value interface {
 }
 
@@ -106,13 +98,12 @@ func (hc *HealthChecker) RunChecks(observer CheckObserver) {
 // getChecks returns a list of components to be checked
 func (hc *HealthChecker) getChecks() []component {
 	var runStatus controllerApi.RunStatus
-	var isActive bool
 	var nrOfFetchingSeeds int
 	var queueSize int64
 	var versions *Result
 	return []component{
 		{
-			id: VeidemannVersion,
+			id: "veidemann:versions",
 			checkers: []checker{
 				func(ctx context.Context) *Result {
 					if versions != nil {
@@ -121,6 +112,7 @@ func (hc *HealthChecker) getChecks() []component {
 					value, err := version.GetVersions(hc.versionPath)
 					versions = &Result{
 						Time:  time.Now(),
+						Unit: "image",
 						Err:   err,
 						Value: value,
 						Status: func(err error) Status {
@@ -135,7 +127,7 @@ func (hc *HealthChecker) getChecks() []component {
 			},
 		},
 		{
-			id: VeidemannStatus,
+			id: "veidemann:status",
 			checkers: []checker{
 				func(ctx context.Context) *Result {
 					crawlerStatus, err := hc.controllerClient.GetCrawlerStatus(ctx)
@@ -145,7 +137,7 @@ func (hc *HealthChecker) getChecks() []component {
 					runStatus = crawlerStatus.GetRunStatus()
 					queueSize = crawlerStatus.GetQueueSize()
 					result := &Result{
-						Type:  "harvester",
+						Type:  "veidemann.api.v1.controller.CrawlerStatus",
 						Time:  time.Now(),
 						Err:   err,
 						Value: fmt.Sprintf("%v", crawlerStatus),
@@ -161,7 +153,7 @@ func (hc *HealthChecker) getChecks() []component {
 			},
 		},
 		{
-			id: VeidemannFetching,
+			id: "veidemann:seed-sample",
 			checkers: []checker{
 				func(ctx context.Context) *Result {
 					fetchingSeeds, err := hc.controllerClient.ListFetchingSeeds(ctx, 5)
@@ -170,7 +162,7 @@ func (hc *HealthChecker) getChecks() []component {
 					}
 					nrOfFetchingSeeds = len(fetchingSeeds)
 					result := &Result{
-						Type:  "harvester",
+						Unit:  "URL",
 						Time:  time.Now(),
 						Err:   err,
 						Value: fetchingSeeds,
@@ -186,12 +178,12 @@ func (hc *HealthChecker) getChecks() []component {
 			},
 		},
 		{
-			id: VeidemannActivity,
+			id: "veidemann:activity",
 			checkers: []checker{
 				func(ctx context.Context) *Result {
 					isActivity, err := hc.prometheusClient.IsActivity(ctx)
 					result := &Result{
-						Type:  "harvester",
+						Unit: "boolean",
 						Time:  time.Now(),
 						Err:   err,
 						Value: isActivity,
@@ -203,26 +195,6 @@ func (hc *HealthChecker) getChecks() []component {
 						}(err),
 					}
 					return result
-				},
-			},
-		},
-		{
-			id: VeidemannHarvest,
-			checkers: []checker{
-				func(ctx context.Context) *Result {
-					return &Result{
-						Type: "harvester",
-						Time: time.Now(),
-						Status: func() Status {
-							switch runStatus {
-							case controllerApi.RunStatus_RUNNING:
-								if queueSize > 0 && isActive && nrOfFetchingSeeds == 0 {
-									return StatusFail
-								}
-							}
-							return StatusPass
-						}(),
-					}
 				},
 			},
 		},
