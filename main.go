@@ -192,6 +192,7 @@ func main() {
 		}
 	}()
 
+	log.Info().Str("address", srv.Addr).Msg("Server listening")
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Error().Err(err).Msg("Server failure")
 	}

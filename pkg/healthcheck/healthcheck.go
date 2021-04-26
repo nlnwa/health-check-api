@@ -3,7 +3,7 @@ package healthcheck
 import (
 	"context"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/version"
-	"log"
+	"github.com/rs/zerolog/log"
 	"time"
 
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/controller"
@@ -127,7 +127,7 @@ func (hc *HealthChecker) getChecks() []component {
 				func(ctx context.Context) *Result {
 					crawlerStatus, err := hc.controllerClient.GetCrawlerStatus(ctx)
 					if err != nil {
-						log.Println(err)
+						log.Warn().Err(err).Msg("Failed to get crawler status")
 					}
 					result := &Result{
 						Type:  "veidemann.api.v1.controller.CrawlerStatus",
@@ -151,7 +151,7 @@ func (hc *HealthChecker) getChecks() []component {
 				func(ctx context.Context) *Result {
 					fetchingSeeds, err := hc.controllerClient.ListFetchingSeeds(ctx, 5)
 					if err != nil {
-						log.Println(err)
+						log.Warn().Err(err).Msg("Failed to list fetching seeds")
 					}
 					result := &Result{
 						Unit:  "URL",
