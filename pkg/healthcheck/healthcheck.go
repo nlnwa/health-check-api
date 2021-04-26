@@ -2,12 +2,10 @@ package healthcheck
 
 import (
 	"context"
-	"fmt"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/version"
 	"log"
 	"time"
 
-	controllerApi "github.com/nlnwa/veidemann-api/go/controller/v1"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/controller"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/prometheus"
 )
@@ -97,9 +95,6 @@ func (hc *HealthChecker) RunChecks(observer CheckObserver) {
 
 // getChecks returns a list of components to be checked
 func (hc *HealthChecker) getChecks() []component {
-	var runStatus controllerApi.RunStatus
-	var nrOfFetchingSeeds int
-	var queueSize int64
 	var versions *Result
 	return []component{
 		{
@@ -134,13 +129,11 @@ func (hc *HealthChecker) getChecks() []component {
 					if err != nil {
 						log.Println(err)
 					}
-					runStatus = crawlerStatus.GetRunStatus()
-					queueSize = crawlerStatus.GetQueueSize()
 					result := &Result{
 						Type:  "veidemann.api.v1.controller.CrawlerStatus",
 						Time:  time.Now(),
 						Err:   err,
-						Value: fmt.Sprintf("%v", crawlerStatus),
+						Value: crawlerStatus,
 						Status: func(err error) Status {
 							if err != nil {
 								return StatusUndefined
@@ -160,7 +153,6 @@ func (hc *HealthChecker) getChecks() []component {
 					if err != nil {
 						log.Println(err)
 					}
-					nrOfFetchingSeeds = len(fetchingSeeds)
 					result := &Result{
 						Unit:  "URL",
 						Time:  time.Now(),
@@ -178,7 +170,7 @@ func (hc *HealthChecker) getChecks() []component {
 			},
 		},
 		{
-			id: "veidemann:activity",
+			id: "prometheus:activity",
 			checkers: []checker{
 				func(ctx context.Context) *Result {
 					isActivity, err := hc.prometheusClient.IsActivity(ctx)
