@@ -1,14 +1,15 @@
 package version
 
 import (
+	"encoding/json"
 	"io/ioutil"
 	"os"
 )
 
-func GetVersions(filename string) (string, error) {
+func GetVersions(filename string) (map[string]string, error) {
 	f, err := os.Open(filename)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer func() {
 		_ = f.Close()
@@ -16,7 +17,11 @@ func GetVersions(filename string) (string, error) {
 
 	b, err := ioutil.ReadAll(f)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return string(b), nil
+	var v map[string]string
+	if err := json.Unmarshal(b, &v); err != nil {
+		return nil, err
+	}
+	return v, err
 }
