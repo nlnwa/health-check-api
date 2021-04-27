@@ -68,7 +68,7 @@ func healthCollector(health *api.Health) healthcheck.CheckObserver {
 	}
 }
 
-func healthCheckHandler(hc healthcheck.HealthCheckere) http.HandlerFunc {
+func healthCheckHandler(hc healthcheck.HealthChecker) http.HandlerFunc {
 	health := &api.Health{
 		Version:   api.Version,
 		ReleaseId: Version,
@@ -112,7 +112,7 @@ type Config struct {
 	ControllerPort   int    `mapstructure:"controller-port"`
 	ControllerApiKey string `mapstructure:"controller-api-key"`
 	PrometheusUrl    string `mapstructure:"prometheus-url"`
-	VersionsPath	 string `mapstructure:"versions-path"`
+	VersionsPath     string `mapstructure:"versions-path"`
 }
 
 func main() {
@@ -154,16 +154,21 @@ func main() {
 
 	logger.InitLog(config.LogLevel, config.LogFormat, config.LogMethod)
 
+	controllerClient := controller.New(controller.Options{
+		Host:   config.ControllerHost,
+		Port:   config.ControllerPort,
+		ApiKey: config.ControllerApiKey,
+	})
+	if err := controllerClient.Connect(); err != nil {
+		panic(err)
+	}
+
+	prometheusClient := prometheus.New(config.PrometheusUrl)
+
 	healthChecker := healthcheck.New(&healthcheck.Options{
-		Controller: controller.Options{
-			Host:   config.ControllerHost,
-			Port:   config.ControllerPort,
-			ApiKey: config.ControllerApiKey,
-		},
-		Prometheus: prometheus.Options{
-			Address: config.PrometheusUrl,
-		},
-		VersionPath: config.VersionsPath,
+		ControllerClient: controllerClient,
+		PrometheusClient: prometheusClient,
+		VersionPath:      config.VersionsPath,
 	})
 
 	router := http.NewServeMux()
@@ -187,12 +192,15 @@ func main() {
 
 		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*30))
 		defer cancel()
-		if err := srv.Shutdown(ctx); err != nil && err != http.ErrServerClosed{
+		if err := srv.Shutdown(ctx); err != nil && err != http.ErrServerClosed {
 			log.Error().Err(err).Msg("")
 		}
 	}()
 
-	log.Info().Str("address", srv.Addr).Msg("Server listening")
+	log.Info().
+		Str("version", Version).
+		Str("address", srv.Addr).
+		Msg("Server listening")
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Error().Err(err).Msg("Server failure")
 	}

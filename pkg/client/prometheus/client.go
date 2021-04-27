@@ -5,16 +5,12 @@ import (
 	"github.com/prometheus/client_golang/api/prometheus/v1"
 )
 
-type Options struct {
-	Address string
-}
-
 type Client struct {
 	v1.API
 }
 
-func New(options Options) Client {
-	promClient, err := api.NewClient(api.Config{Address: options.Address})
+func New(address string) Client {
+	promClient, err := api.NewClient(api.Config{Address: address})
 	if err != nil {
 		panic(err.Error())
 	}

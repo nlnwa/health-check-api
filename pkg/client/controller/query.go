@@ -19,16 +19,8 @@ type Query interface {
 }
 
 func (ac Client) ListFetchingSeeds(ctx context.Context, pageSize int32) ([]string, error) {
-	conn, err := ac.dial(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		_ = conn.Close()
-	}()
-
-	reportClient := report.NewReportClient(conn)
-	configClient := config.NewConfigClient(conn)
+	reportClient := report.NewReportClient(ac.conn)
+	configClient := config.NewConfigClient(ac.conn)
 
 	req := &report.CrawlExecutionsListRequest{
 		PageSize:           pageSize,
@@ -80,15 +72,7 @@ func (ac Client) ListFetchingSeeds(ctx context.Context, pageSize int32) ([]strin
 }
 
 func (ac Client) GetCrawlerStatus(ctx context.Context) (*controller.CrawlerStatus, error) {
-	conn, err := ac.dial(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		_ = conn.Close()
-	}()
-
-	client := controller.NewControllerClient(conn)
+	client := controller.NewControllerClient(ac.conn)
 
 	status, err := client.Status(ctx, &empty.Empty{})
 	if err != nil {

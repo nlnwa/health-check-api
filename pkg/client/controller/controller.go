@@ -18,10 +18,9 @@ package controller
 import (
 	"context"
 	"fmt"
-	"strconv"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"time"
 )
 
 type Options struct {
@@ -34,28 +33,32 @@ type Options struct {
 type Client struct {
 	address string // address in the form "host:port"
 	cred    credentials.PerRPCCredentials
+	conn    *grpc.ClientConn
 }
 
 // New creates a new client with the specified address and apiKey.
 func New(options Options) Client {
-	return Client{
-		address: options.Host + ":" + strconv.FormatInt(int64(options.Port), 10),
+	c := Client{
+		address: fmt.Sprintf("%s:%d", options.Host, options.Port),
 		cred:    apiKeyCredentials{Key: options.ApiKey},
 	}
+	return c
 }
 
-// Dial makes a connection to the gRPC service.
-func (ac Client) dial(ctx context.Context) (*grpc.ClientConn, error) {
+// Connect establishes a connection to the gRPC service (lazily).
+func (ac Client) Connect() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	conn, err := grpc.DialContext(ctx, ac.address, grpc.WithInsecure(), grpc.WithPerRPCCredentials(ac.cred))
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial %s: %w", ac.address, err)
+		return fmt.Errorf("failed to Connect %s: %w", ac.address, err)
 	}
-	return conn, nil
+	ac.conn = conn
+	return nil
 }
 
-// Hangup closes the connection to the gRPC service.
-func (ac Client) hangup(conn *grpc.ClientConn) {
-	if conn != nil {
-		_ = conn.Close()
+func (ac Client) Close() {
+	if ac.conn != nil {
+		_ = ac.conn.Close()
 	}
 }

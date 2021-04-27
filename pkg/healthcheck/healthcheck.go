@@ -3,7 +3,9 @@ package healthcheck
 import (
 	"context"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/version"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"google.golang.org/protobuf/encoding/protojson"
 	"time"
 
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/controller"
@@ -49,33 +51,33 @@ type component struct {
 type CheckObserver func(*CheckResult)
 
 type Options struct {
-	Controller  controller.Options
-	Prometheus  prometheus.Options
-	VersionPath string
+	ControllerClient controller.Client
+	PrometheusClient prometheus.Client
+	VersionPath      string
 }
 
-type HealthCheckere interface {
+type HealthChecker interface {
 	RunChecks(CheckObserver)
 }
 
-type HealthChecker struct {
+type HealthCheck struct {
 	prometheusClient prometheus.Query
 	controllerClient controller.Query
 	versionPath      string
 	components       []component
 }
 
-func New(options *Options) HealthCheckere {
-	hc := &HealthChecker{
-		controllerClient: controller.New(options.Controller),
-		prometheusClient: prometheus.New(options.Prometheus),
+func New(options *Options) HealthChecker {
+	hc := &HealthCheck{
+		controllerClient: options.ControllerClient,
+		prometheusClient: options.PrometheusClient,
 		versionPath:      options.VersionPath,
 	}
 	hc.components = hc.getChecks()
 	return hc
 }
 
-func (hc *HealthChecker) RunChecks(observer CheckObserver) {
+func (hc *HealthCheck) RunChecks(observer CheckObserver) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
@@ -94,7 +96,7 @@ func (hc *HealthChecker) RunChecks(observer CheckObserver) {
 }
 
 // getChecks returns a list of components to be checked
-func (hc *HealthChecker) getChecks() []component {
+func (hc *HealthCheck) getChecks() []component {
 	var versions *Result
 	return []component{
 		{
@@ -107,7 +109,7 @@ func (hc *HealthChecker) getChecks() []component {
 					value, err := version.GetVersions(hc.versionPath)
 					versions = &Result{
 						Time:  time.Now(),
-						Unit: "image",
+						Unit:  "image",
 						Err:   err,
 						Value: value,
 						Status: func(err error) Status {
@@ -128,6 +130,12 @@ func (hc *HealthChecker) getChecks() []component {
 					crawlerStatus, err := hc.controllerClient.GetCrawlerStatus(ctx)
 					if err != nil {
 						log.Warn().Err(err).Msg("Failed to get crawler status")
+					}
+					if log.Logger.GetLevel() == zerolog.DebugLevel {
+						b, err := protojson.Marshal(crawlerStatus)
+						if err == nil {
+							log.Debug().RawJSON("status", b).Msg("")
+						}
 					}
 					result := &Result{
 						Type:  "veidemann.api.v1.controller.CrawlerStatus",
@@ -153,6 +161,7 @@ func (hc *HealthChecker) getChecks() []component {
 					if err != nil {
 						log.Warn().Err(err).Msg("Failed to list fetching seeds")
 					}
+					log.Debug().Strs("seeds", fetchingSeeds).Msg("")
 					result := &Result{
 						Unit:  "URL",
 						Time:  time.Now(),
@@ -174,8 +183,9 @@ func (hc *HealthChecker) getChecks() []component {
 			checkers: []checker{
 				func(ctx context.Context) *Result {
 					isActivity, err := hc.prometheusClient.IsActivity(ctx)
+					log.Debug().Bool("activity", isActivity).Msg("")
 					result := &Result{
-						Unit: "boolean",
+						Unit:  "boolean",
 						Time:  time.Now(),
 						Err:   err,
 						Value: isActivity,
