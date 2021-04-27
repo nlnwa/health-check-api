@@ -159,9 +159,11 @@ func main() {
 		Port:   config.ControllerPort,
 		ApiKey: config.ControllerApiKey,
 	})
-	if err := controllerClient.Connect(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := controllerClient.Connect(ctx); err != nil {
 		panic(err)
 	}
+	cancel()
 
 	prometheusClient := prometheus.New(config.PrometheusUrl)
 
@@ -192,9 +194,10 @@ func main() {
 
 		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*30))
 		defer cancel()
-		if err := srv.Shutdown(ctx); err != nil && err != http.ErrServerClosed {
-			log.Error().Err(err).Msg("")
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Warn().Err(err).Msg("")
 		}
+		controllerClient.Close()
 	}()
 
 	log.Info().

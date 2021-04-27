@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"time"
 )
 
 type Options struct {
@@ -45,13 +44,11 @@ func New(options Options) Client {
 	return c
 }
 
-// Connect establishes a connection to the gRPC service (lazily).
-func (ac Client) Connect() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, err := grpc.DialContext(ctx, ac.address, grpc.WithInsecure(), grpc.WithPerRPCCredentials(ac.cred))
+// Connect establishes a connection to the gRPC service.
+func (ac Client) Connect(ctx context.Context) error {
+	conn, err := grpc.DialContext(ctx, ac.address, grpc.WithBlock(), grpc.WithInsecure(), grpc.WithPerRPCCredentials(ac.cred))
 	if err != nil {
-		return fmt.Errorf("failed to Connect %s: %w", ac.address, err)
+		return fmt.Errorf("failed to connect %s: %w", ac.address, err)
 	}
 	ac.conn = conn
 	return nil
