@@ -6,29 +6,22 @@ import (
 	"os"
 )
 
-var Version = "undefined"
-
-func GetNotes(filename string) []string {
+func GetVersions(filename string) (map[string]string, error) {
 	f, err := os.Open(filename)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer func() {
 		_ = f.Close()
 	}()
 
-	data, err := ioutil.ReadAll(f)
+	b, err := ioutil.ReadAll(f)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var v map[string]string
-	if err := json.Unmarshal(data, &v); err != nil {
-		return nil
+	if err := json.Unmarshal(b, &v); err != nil {
+		return nil, err
 	}
-
-	var notes []string
-	for key, value := range v {
-		notes = append(notes, key+": "+value)
-	}
-	return notes
+	return v, err
 }

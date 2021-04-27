@@ -19,11 +19,13 @@ func (pc Client) IsActivity(ctx context.Context) (bool, error) {
 	}
 	switch value.Type() {
 	case model.ValVector:
-		vector := value.(model.Vector)
-		if len(vector) == 0 {
+		if vector, ok := value.(model.Vector); !ok {
+			return false, nil
+		} else if len(vector) == 0 {
 			return false, fmt.Errorf("expected vector to have values: %#v", vector)
+		} else {
+			return vector[0].Value > 0, nil
 		}
-		return vector[0].Value > 0, nil
 	default:
 		return false, nil
 	}

@@ -2,21 +2,14 @@ package healthcheck
 
 import (
 	"context"
-	"fmt"
+	"github.com/nlnwa/veidemann-health-check-api/pkg/version"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"google.golang.org/protobuf/encoding/protojson"
 	"time"
 
-	controllerApi "github.com/nlnwa/veidemann-api-go/controller/v1"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/controller"
 	"github.com/nlnwa/veidemann-health-check-api/pkg/client/prometheus"
-	"github.com/nlnwa/veidemann-health-check-api/pkg/client/web"
-)
-
-const (
-	VeidemannDashboard     string = "veidemann:dashboard"
-	VeidemannJobs          string = "veidemann:jobs"
-	VeidemannCrawlerStatus string = "veidemann:crawlerStatus"
-	VeidemannActivity      string = "veidemann:activity"
-	VeidemannHarvest       string = "veidemann:harvest"
 )
 
 type Value interface {
@@ -37,16 +30,15 @@ type CheckResult struct {
 }
 
 type Result struct {
-	Id          string
-	Type        string
-	Unit        string
-	Endpoints   []string
-	Links       []string
-	Time        time.Time
-	Status      Status
-	Value       Value
-	Err         error
-	Description string
+	Id        string
+	Type      string
+	Value     Value
+	Unit      string
+	Status    Status
+	Endpoints []string
+	Links     []string
+	Time      time.Time
+	Err       error
 }
 
 type checker func(context.Context) *Result
@@ -56,37 +48,44 @@ type component struct {
 	checkers []checker
 }
 
-type checkObserver func(*CheckResult)
+type CheckObserver func(*CheckResult)
 
 type Options struct {
-	WebOptions web.Options
-	Controller controller.Options
-	Prometheus prometheus.Options
+	ControllerClient controller.Client
+	PrometheusClient prometheus.Client
+	VersionPath      string
 }
 
-type HealthChecker struct {
-	httpClient       web.Query
+type HealthChecker interface {
+	RunChecks(CheckObserver)
+}
+
+type HealthCheck struct {
 	prometheusClient prometheus.Query
 	controllerClient controller.Query
+	versionPath      string
 	components       []component
 }
 
-func NewHealthChecker(options *Options) *HealthChecker {
-	hc := &HealthChecker{
-		httpClient:       web.New(options.WebOptions),
-		controllerClient: controller.New(options.Controller),
-		prometheusClient: prometheus.New(options.Prometheus),
+func New(options *Options) HealthChecker {
+	hc := &HealthCheck{
+		controllerClient: options.ControllerClient,
+		prometheusClient: options.PrometheusClient,
+		versionPath:      options.VersionPath,
 	}
 	hc.components = hc.getChecks()
 	return hc
 }
 
-func (hc *HealthChecker) RunChecks(observer checkObserver) {
+func (hc *HealthCheck) RunChecks(observer CheckObserver) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
 	for _, component := range hc.components {
 		var checkResults []*Result
 
 		for _, checker := range component.checkers {
-			checkResults = append(checkResults, hc.runCheck(checker))
+			checkResults = append(checkResults, checker(ctx))
 		}
 		result := &CheckResult{
 			Name:    component.id,
@@ -96,151 +95,108 @@ func (hc *HealthChecker) RunChecks(observer checkObserver) {
 	}
 }
 
-func (hc *HealthChecker) runCheck(checker checker) *Result {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
-	defer cancel()
-	return checker(ctx)
-}
-
 // getChecks returns a list of components to be checked
-func (hc *HealthChecker) getChecks() []component {
-	var veidemannRunStatus *controllerApi.RunStatus
-	var veidemannIsActive bool
-	var veidemannJobs []string
-
+func (hc *HealthCheck) getChecks() []component {
+	var versions *Result
 	return []component{
 		{
-			id: VeidemannDashboard,
+			id: "veidemann:versions",
 			checkers: []checker{
 				func(ctx context.Context) *Result {
-					statusCode, status, err := hc.httpClient.CheckVeidemannDashboard(ctx)
-					result := &Result{
-						Description: "check veidemann dashboard is responding",
-						Type:        "dashboard",
-						Time:        time.Now(),
-						Err:         err,
-						Value:       status,
-						Status: func(err error) Status {
-							if err != nil {
-								return StatusFail
-							} else if statusCode >= 400 {
-								return StatusWarning
-							} else {
-								return StatusPass
-							}
-						}(err),
+					if versions != nil {
+						return versions
 					}
-					return result
-				},
-			},
-		},
-		{
-			id: VeidemannCrawlerStatus,
-			checkers: []checker{
-				func(ctx context.Context) *Result {
-					var err error
-					veidemannRunStatus, err = hc.controllerClient.GetRunStatus(ctx)
-					result := &Result{
-						Description: "check crawler status",
-						Type:        "harvester",
-						Time:        time.Now(),
-						Err:         err,
-						Value:       fmt.Sprintf("%v", veidemannRunStatus),
+					value, err := version.GetVersions(hc.versionPath)
+					versions = &Result{
+						Time:  time.Now(),
+						Unit:  "image",
+						Err:   err,
+						Value: value,
 						Status: func(err error) Status {
 							if err != nil {
 								return StatusWarning
-							} else {
-								return StatusUndefined
-							}
-						}(err),
-					}
-
-					return result
-				},
-			},
-		},
-		{
-			id: VeidemannJobs,
-			checkers: []checker{
-				func(ctx context.Context) *Result {
-					result := &Result{
-						Description: "check which jobs are running",
-						Type:        "harvester",
-						Time:        time.Now(),
-					}
-					var err error
-					veidemannJobs, err = hc.controllerClient.GetRunningJobs(ctx)
-					if err != nil {
-						result.Err = err
-						result.Status = func(err error) Status {
-							if err != nil {
-								return StatusWarning
-							} else {
-								return StatusUndefined
-							}
-						}(err)
-					} else {
-						if len(veidemannJobs) > 0 {
-							result.Value = veidemannJobs
-						}
-					}
-					return result
-				},
-			},
-		},
-		{
-			id: VeidemannActivity,
-			checkers: []checker{
-				func(ctx context.Context) *Result {
-					result := &Result{
-						Description: "check if there is harvesting activity",
-						Type:        "harvester",
-						Time:        time.Now(),
-					}
-					var err error
-					veidemannIsActive, err = hc.prometheusClient.IsActivity(ctx)
-					if err != nil {
-						result.Err = err
-						result.Status = func(err error) Status {
-							if err != nil {
-								return StatusWarning
-							} else {
-								return StatusUndefined
-							}
-						}(err)
-					} else {
-						result.Value = veidemannIsActive
-					}
-
-					return result
-				},
-			},
-		},
-		{
-			id: VeidemannHarvest,
-			checkers: []checker{
-				func(ctx context.Context) *Result {
-					return &Result{
-						Description: "check if veidemann harvest is nominal",
-						Type:        "harvester",
-						Time:        time.Now(),
-						Status: func() Status {
-							if veidemannRunStatus == nil {
-								return StatusFail
-							} else if *veidemannRunStatus == controllerApi.RunStatus_PAUSED {
-								if veidemannIsActive {
-									return StatusWarning
-								} else {
-									return StatusPass
-								}
-							} else if *veidemannRunStatus == controllerApi.RunStatus_PAUSE_REQUESTED {
-								return StatusPass
-							} else if len(veidemannJobs) > 0 && !veidemannIsActive {
-								return StatusFail
 							}
 							return StatusPass
-						}(),
+						}(err),
 					}
+					return versions
+				},
+			},
+		},
+		{
+			id: "veidemann:status",
+			checkers: []checker{
+				func(ctx context.Context) *Result {
+					crawlerStatus, err := hc.controllerClient.GetCrawlerStatus(ctx)
+					if err != nil {
+						log.Warn().Err(err).Msg("Failed to get crawler status")
+					}
+					if log.Logger.GetLevel() == zerolog.DebugLevel {
+						b, err := protojson.Marshal(crawlerStatus)
+						if err == nil {
+							log.Debug().RawJSON("status", b).Msg("")
+						}
+					}
+					result := &Result{
+						Type:  "veidemann.api.v1.controller.CrawlerStatus",
+						Time:  time.Now(),
+						Err:   err,
+						Value: crawlerStatus,
+						Status: func(err error) Status {
+							if err != nil {
+								return StatusUndefined
+							}
+							return StatusPass
+						}(err),
+					}
+					return result
+				},
+			},
+		},
+		{
+			id: "veidemann:seed-sample",
+			checkers: []checker{
+				func(ctx context.Context) *Result {
+					fetchingSeeds, err := hc.controllerClient.ListFetchingSeeds(ctx, 5)
+					if err != nil {
+						log.Warn().Err(err).Msg("Failed to list fetching seeds")
+					}
+					log.Debug().Strs("seeds", fetchingSeeds).Msg("")
+					result := &Result{
+						Unit:  "URL",
+						Time:  time.Now(),
+						Err:   err,
+						Value: fetchingSeeds,
+						Status: func(err error) Status {
+							if err != nil {
+								return StatusUndefined
+							}
+							return StatusPass
+						}(err),
+					}
+					return result
+				},
+			},
+		},
+		{
+			id: "prometheus:activity",
+			checkers: []checker{
+				func(ctx context.Context) *Result {
+					isActivity, err := hc.prometheusClient.IsActivity(ctx)
+					log.Debug().Bool("activity", isActivity).Msg("")
+					result := &Result{
+						Unit:  "boolean",
+						Time:  time.Now(),
+						Err:   err,
+						Value: isActivity,
+						Status: func(err error) Status {
+							if err != nil {
+								return StatusUndefined
+							}
+							return StatusPass
+						}(err),
+					}
+					return result
 				},
 			},
 		},
